@@ -17,6 +17,7 @@ class ZScore:
             self.n += 1
             self.total_sum += 1
             self.sum_sq += 1
+            return
         if count == 0:
             raise KeyError(f"Value {x} not in multiset")
         if count == 1:
@@ -65,4 +66,7 @@ class ZScore:
         return math.sqrt(max(0.0, variance))
 
     def CalcZScore(self,value:int) -> float:
-        return (value - self.CalcMean()) / self.CalcDev()
+        deviation = self.CalcDev()
+        if deviation == 0:
+            return 0.0
+        return (value - self.CalcMean()) / deviation
