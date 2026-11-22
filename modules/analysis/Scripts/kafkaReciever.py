@@ -5,7 +5,7 @@ from WebData import *
 
 class FlowReceiver:
 
-    def __init__(self, bootstrap_servers="localhost:9094",
+    def __init__(self, bootstrap_servers="127.0.0.1:9094",
                  group_id="netguard-analysis",
                  topic="flows.normalized"):
 

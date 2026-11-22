@@ -5,9 +5,9 @@ from FlowHandler import FlowProcessor
 from kafkaProducer import AlertProducer
 from AlertCrafter import *
 
-# localhost:9094 is the broker's host-side listener; inside the compose
+# 127.0.0.1:9094 is the broker's host-side listener; inside the compose
 # network use KAFKA_BOOTSTRAP_SERVERS=kafka:9092.
-BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9094")
+BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9094")
 
 
 def main():
