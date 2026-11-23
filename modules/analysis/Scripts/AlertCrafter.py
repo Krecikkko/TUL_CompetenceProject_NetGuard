@@ -7,10 +7,36 @@ from time import time
 from TimeUtils import TimeUtils
 from kafkaProducer import AlertProducer
 
+class SimplifiedAlertManager:
+    def __init__(self):
+        self.resources:set[tuple[str,str,str,AlertTypes]] = set()
+
+    def add(self, srcIp: str,method:str, severity: str, alertType: AlertTypes) -> bool:
+        key = (srcIp,method,severity,alertType)
+        if(key in self.resources):
+               return True
+        self.resources.add(key)
+        return False
+
+    def cleanup(self):
+        self.resources.clear()
+
 class AlertCrafterLogic:
     producer:AlertProducer
-    alertQueue: list[AlertData] = [] #the list is used as a buffor but could propably be removed, it creates only minor timeloss at the moment
+    simplifiedAlertList:List[SimplifiedAlertManager]
+    alertQueue: list[AlertData]
+
+    def __init__(self):
+        self.simplifiedAlertList = [SimplifiedAlertManager() for _ in Config.TimeWindows]
+        self.alertQueue = []
+
     def CraftAlert(self,method:str,severity:str,confidence:float,flow:WebRecordData,windowType:int,alertType:AlertTypes,featureParam:int | str | float):
+        if(alertType.name != AlertTypes.Brute_Force):
+               if(self.simplifiedAlertList[windowType].add(flow.src_ip,method,severity,alertType)):
+                      return
+        else:
+               if(self.simplifiedAlertList[windowType].add(flow.dst_ip,method,severity,alertType)):
+                    return
         alertData:AlertData = AlertData()
         alertData.type = AlertTypes(alertType.value - alertType.value%10).name
         alertData.method = method
@@ -20,8 +46,8 @@ class AlertCrafterLogic:
         alertData.src_ip = flow.src_ip
         alertData.dst_ip = flow.dst_ip
         alertData.timestamp = str(time())
-        alertData.window_start = str(TimeUtils.add(TimeUtils.parse(flow.start_time),-windowType,0))
-        alertData.duration_seconds = windowType
+        alertData.window_start = str(TimeUtils.add(TimeUtils.parse(flow.start_time),-Config.TimeWindows[windowType],0))
+        alertData.duration_seconds = Config.TimeWindows[windowType]
         if(alertType == AlertTypes.Port_Scan):
             alertData.features.append(DetectionFeature("Ports Scanned", featureParam))
             alertData.explanation = "Multiple ports were checked by a single user, potentially in an attempt to find vurnabilities"
@@ -36,10 +62,10 @@ class AlertCrafterLogic:
                     alertData.explanation = "Single user failed to connect or was denied multiple times, suggesting attack on access credentials"
         if(alertType == AlertTypes.Abnormal_Connection_Big_Payloads):
                     alertData.features.append(DetectionFeature("Average payload size", featureParam))
-                    alertData.explanation = "Observed increase in size of packets during window"
+                    alertData.explanation = "Observed increase in size of packets during window, unrelated to the packet"
         if(alertType == AlertTypes.Abnormal_Connection_Heavy_Traffic):
                     alertData.features.append(DetectionFeature("Average traffic amount", featureParam))
-                    alertData.explanation = "Observed above average traffic amount"
+                    alertData.explanation = "Observed above average traffic amount, unrelated to the packet"
         self.alertQueue.append(alertData)        
         return
         

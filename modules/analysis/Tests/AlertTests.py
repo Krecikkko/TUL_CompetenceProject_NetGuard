@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import timedelta
 from math import sqrt
 from pathlib import Path
 from unittest import TestCase, main
@@ -11,6 +12,7 @@ from AlertParams import AlertTypes
 from Config import Config
 from FlowDetectionParams import FlowDetectionData
 from FlowHandler import FlowProcessor
+from StatisticsListBehaviour import ZScoreBehaviour
 from TimeUtils import TimeUtils
 from WebData import WebRecordData
 
@@ -28,11 +30,14 @@ class TestAlertGeneration(TestCase):
             "AvgPacketSize",
             "AvgFlowPerS",
             "SeverityMulti",
+            "MinimumDataForStatistical",
+            "MaximumDataForStatistical",
+            "LowDataSampleStatModifier",
         )
         self.original_config = {name: getattr(Config, name) for name in config_fields}
         self.addCleanup(self._restore_config)
 
-        Config.TimeWindows = [1, 2, 3]
+        Config.TimeWindows = [1, 10, 60]
         Config.PortConnectedTresh = [1000] * 3
         Config.UnclosedConnectionsTresh = [1000] * 3
         Config.PSHRequestsSent = [1000] * 3
@@ -40,6 +45,9 @@ class TestAlertGeneration(TestCase):
         Config.AvgPacketSize = [10000] * 3
         Config.AvgFlowPerS = [1000] * 3
         Config.SeverityMulti = [1, 1.5, 2]
+        Config.MinimumDataForStatistical = 10
+        Config.MaximumDataForStatistical = 2000
+        Config.LowDataSampleStatModifier = 1.2
         self._new_harness()
 
     def _restore_config(self):
@@ -99,13 +107,18 @@ class TestAlertGeneration(TestCase):
                 )
 
     def _assert_statistical_alert(self, flow, window, rule_id, alert_type,
-                                  feature_name, feature_value, baseline):
+                                  feature_name, feature_value, baseline, window_index):
         alerts = self.alert_crafter.alertQueue
         self.assertEqual(len(alerts), 1)
         mean = sum(baseline) / len(baseline)
         variance = sum((value - mean) ** 2 for value in baseline) / (len(baseline) - 1)
         score = (feature_value - mean) / sqrt(variance)
-        multi = score - 3
+        self.assertGreater(
+            score,
+            2.5 * Config.SeverityMulti[0] *
+            pow(Config.LowDataSampleStatModifier, window_index),
+        )
+        multi = score - 2.5
         if multi > Config.SeverityMulti[2]:
             severity = "Severe"
         elif multi > Config.SeverityMulti[1]:
@@ -127,6 +140,10 @@ class TestAlertGeneration(TestCase):
         zscore.n = len(values)
         zscore.total_sum = sum(values)
         zscore.sum_sq = sum(value * value for value in values)
+
+    def _seed_behavior(self, behavior, values):
+        for value in values:
+            behavior.Add(value)
 
     def test_rule_port_scan_each_window(self):
         Config.PortConnectedTresh = [1] * 3
@@ -188,15 +205,16 @@ class TestAlertGeneration(TestCase):
         )
 
     def test_rule_big_payloads_each_window(self):
-        Config.AvgPacketSize = [50] * 3
+        Config.AvgPacketSize = [550] * 3
         self.flow_processor.flowData.shouldSendPatternAlerts = [True] * 3
         flow = self._flow(byte_count=100)
 
-        self.flow_processor.ClassifyFlow(flow)
+        for _ in range(Config.MinimumDataForStatistical + 1):
+            self.flow_processor.ClassifyFlow(flow)
 
         self._assert_rule_alerts(
             flow, "Abnormal_Connection_Big_Payloads", "Abnormal_Connection",
-            "Average payload size", 100,
+            "Average payload size", 100 * (Config.MinimumDataForStatistical + 1),
         )
 
     def test_zscore_port_scan_each_window(self):
@@ -222,7 +240,7 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "Port_Scan", "Port_Scan", "Ports Scanned", 20,
-                    [1] * 20 + [10],
+                    [1] * 20 + [10], window_index,
                 )
 
     def test_zscore_slowloris_each_window(self):
@@ -250,7 +268,7 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "DoS_Slowloris", "DoS", "Maintained open connections", 6,
-                    [1] * 20 + [6],
+                    [1] * 20 + [6], window_index,
                 )
 
     def test_zscore_hulk_each_window(self):
@@ -274,7 +292,7 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "DoS_Hulk", "DoS", "PSH requests amount", 11,
-                    [1] * 20 + [11],
+                    [1] * 20 + [11], window_index,
                 )
 
     def test_zscore_brute_force_each_window(self):
@@ -298,8 +316,113 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "Brute_Force", "Brute_Force",
-                    "Failed connections amount", 11, [1] * 20 + [11],
+                    "Failed connections amount", 11, [1] * 20 + [11], window_index,
                 )
+
+    def test_zscore_packet_amount_each_window(self):
+        for window_index, window in enumerate(Config.TimeWindows):
+            with self.subTest(window=window):
+                self._new_harness()
+                flow = self._flow(byte_count=1)
+                pattern = self.flow_processor.flowData.flowPatternData
+                pattern.AvgPacketAmount[window_index] = Config.MinimumDataForStatistical + 1
+                self._seed_behavior(
+                    pattern.AvgPacketAmountStats[window_index],
+                    [1] * 20 + [2],
+                )
+                self.flow_processor.flowData.shouldSendPatternAlerts[window_index] = True
+                self.flow_processor.flowData.patternWindowEnd[window_index] = (
+                    TimeUtils.parse(flow.start_time) - timedelta(seconds=1)
+                )
+
+                self.flow_processor.ClassifyFlow(flow)
+
+                self._assert_statistical_alert(
+                    flow, window, "Abnormal_Connection_Heavy_Traffic",
+                    "Abnormal_Connection", "Average traffic amount",
+                    Config.MinimumDataForStatistical + 2, [1] * 20 + [2],
+                    window_index,
+                )
+
+    def test_zscore_packet_size_each_window(self):
+        for window_index, window in enumerate(Config.TimeWindows):
+            with self.subTest(window=window):
+                self._new_harness()
+                flow = self._flow(byte_count=100)
+                pattern = self.flow_processor.flowData.flowPatternData
+                pattern.TotalPacketSize[window_index] = 1100
+                self._seed_behavior(
+                    pattern.TotalPacketSizeStats[window_index],
+                    [100] * 20 + [200],
+                )
+                self.flow_processor.flowData.shouldSendPatternAlerts[window_index] = True
+                self.flow_processor.flowData.patternWindowEnd[window_index] = (
+                    TimeUtils.parse(flow.start_time) - timedelta(seconds=1)
+                )
+
+                self.flow_processor.ClassifyFlow(flow)
+
+                self._assert_statistical_alert(
+                    flow, window, "Abnormal_Connection_Big_Payloads",
+                    "Abnormal_Connection", "Average payload size", 1200,
+                    [100] * 20 + [200], window_index,
+                )
+
+    def test_simplified_alert_list_suppresses_duplicates(self):
+        flow = self._flow()
+        for window_index, window in enumerate(Config.TimeWindows):
+            self.alert_crafter.CraftAlert(
+                "Rule", "Medium", 1.0, flow, window_index,
+                AlertTypes.Port_Scan, 5,
+            )
+            self.alert_crafter.CraftAlert(
+                "Rule", "Medium", 1.0, flow, window_index,
+                AlertTypes.Port_Scan, 8,
+            )
+
+        self.assertEqual(len(self.alert_crafter.alertQueue), len(Config.TimeWindows))
+        self.assertEqual(
+            [alert.duration_seconds for alert in self.alert_crafter.alertQueue],
+            Config.TimeWindows,
+        )
+
+    def test_simplified_alert_list_cleans_up_at_each_pattern_cycle(self):
+        Config.PortConnectedTresh = [0.5, 1000, 1000]
+        flow = self._flow(tcp_flags=2)
+        current_time = TimeUtils.parse(flow.start_time)
+        self.flow_processor.flowData.shouldSendPatternAlerts = [True] * 3
+        self.flow_processor.flowData.patternWindowEnd = [
+            current_time - timedelta(seconds=1) for _ in Config.TimeWindows
+        ]
+
+        for window_index in range(len(Config.TimeWindows)):
+            self.alert_crafter.simplifiedAlertList[window_index].add(
+                flow.src_ip, "Rule", "Medium", AlertTypes.Port_Scan,
+            )
+
+        self.flow_processor.ClassifyFlow(flow)
+        self.assertEqual(len(self.alert_crafter.alertQueue), 1)
+
+        for window_index in range(len(Config.TimeWindows)):
+            self.alert_crafter.CraftAlert(
+                "Rule", "Medium", 1.0, flow, window_index,
+                AlertTypes.Port_Scan, 1,
+            )
+        self.assertEqual(len(self.alert_crafter.alertQueue), 3)
+
+        next_cycle_flow = self._flow(tcp_flags=2)
+        self.flow_processor.flowData.patternWindowEnd = [
+            current_time - timedelta(seconds=1) for _ in Config.TimeWindows
+        ]
+        self.flow_processor.ClassifyFlow(next_cycle_flow)
+        self.assertEqual(len(self.alert_crafter.alertQueue), 4)
+
+        for window_index in range(len(Config.TimeWindows)):
+            self.alert_crafter.CraftAlert(
+                "Rule", "Medium", 1.0, next_cycle_flow, window_index,
+                AlertTypes.Port_Scan, 1,
+            )
+        self.assertEqual(len(self.alert_crafter.alertQueue), 6)
 if __name__ == '__main__':
     main()
     
