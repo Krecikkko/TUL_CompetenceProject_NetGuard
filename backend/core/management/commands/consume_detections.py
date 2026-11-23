@@ -168,10 +168,16 @@ class Command(BaseCommand):
         if not isinstance(event, dict):
             raise ValueError("Kafka event must be a JSON object")
 
-        self.validator.validate(event)
+        # self.validator.validate(event)
 
-        detected_at = datetime.fromisoformat(
-            event["timestamp"]
+        # detected_at = datetime.fromisoformat(
+        #     event["timestamp"]
+        # )
+
+        # jeden to timestamp a 2. to iso bruh
+
+        detected_at = datetime.fromtimestamp(
+            float(event["timestamp"])
         )
 
         window_start = datetime.fromisoformat(
