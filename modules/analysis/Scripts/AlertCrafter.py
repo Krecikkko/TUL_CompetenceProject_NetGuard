@@ -31,7 +31,7 @@ class AlertCrafterLogic:
         self.alertQueue = []
 
     def CraftAlert(self,method:str,severity:str,confidence:float,flow:WebRecordData,windowType:int,alertType:AlertTypes,featureParam:int | str | float):
-        if(alertType.name != AlertTypes.Brute_Force):
+        if(alertType.name != AlertTypes.BRUTE_FORCE_LIKE):
                if(self.simplifiedAlertList[windowType].add(flow.src_ip,method,severity,alertType)):
                       return
         else:
@@ -48,7 +48,7 @@ class AlertCrafterLogic:
         alertData.timestamp = str(time())
         alertData.window_start = str(TimeUtils.add(TimeUtils.parse(flow.start_time),-Config.TimeWindows[windowType],0))
         alertData.duration_seconds = Config.TimeWindows[windowType]
-        if(alertType == AlertTypes.Port_Scan):
+        if(alertType == AlertTypes.PORT_SCAN):
             alertData.features.append(DetectionFeature("Ports Scanned", featureParam))
             alertData.explanation = "Multiple ports were checked by a single user, potentially in an attempt to find vurnabilities"
         if(alertType == AlertTypes.DoS_Slowloris):
@@ -57,7 +57,7 @@ class AlertCrafterLogic:
         if(alertType == AlertTypes.DoS_Hulk):
                     alertData.features.append(DetectionFeature("PSH requests amount", featureParam))
                     alertData.explanation = "Single user send too many requests potentially overloading server"
-        if(alertType == AlertTypes.Brute_Force):
+        if(alertType == AlertTypes.BRUTE_FORCE_LIKE):
                     alertData.features.append(DetectionFeature("Failed connections amount", featureParam))
                     alertData.explanation = "Single user failed to connect or was denied multiple times, suggesting attack on access credentials"
         if(alertType == AlertTypes.Abnormal_Connection_Big_Payloads):
