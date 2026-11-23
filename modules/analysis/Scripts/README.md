@@ -147,7 +147,7 @@ If you see `OK`, you're done.
 
 ## 5. Starting Kafka
 
-The module connects to Kafka at **`localhost:9094`** by default (override with the `KAFKA_BOOTSTRAP_SERVERS` environment variable, e.g. `kafka:9092` inside the compose network). Kafka runs in Docker and is started from the **repository root** (not from `modules/analysis`).
+The module connects to Kafka at **`127.0.0.1:9094`** by default (override with the `KAFKA_BOOTSTRAP_SERVERS` environment variable, e.g. `kafka:9092` inside the compose network). Kafka runs in Docker and is started from the **repository root** (not from `modules/analysis`).
 
 Open a **second terminal window** and run:
 
@@ -221,6 +221,7 @@ python main.py
 | `ModuleNotFoundError: No module named 'confluent_kafka'` (or `numpy`, `multiset`) | The venv isn't active or the dependencies weren't installed. Activate the venv and repeat [step 4](#4-installing-dependencies). |
 | `ModuleNotFoundError: No module named 'kafkaReciever'` (or another module file) | You're running `main.py` from a different folder. Go to `modules/analysis` and run `python main.py`. |
 | `Connect to ipv4#127.0.0.1:9094 failed: Connection refused` | Kafka isn't running. Start it ([step 5](#5-starting-kafka)) and check `docker compose ps -a`. |
+| `Connect to ipv6#[::1]:9094 failed` | The external listener is IPv4-only. Use `127.0.0.1:9094` for a host process; containers should use `kafka:9092`. |
 | `Subscribed topic not available: flows.normalized` | The topics weren't created. Run `docker compose up -d kafka-init` again. |
 | `pip install confluent-kafka` fails (build errors, missing `librdkafka`) | Upgrade pip (`python -m pip install --upgrade pip`) and try again. If that doesn't help, make sure you're using Python 3.14 from the venv (`python --version`). |
 | `Message processing error: ...` in the console | A message on `flows.normalized` has a different format than the module expects (see `WebData.py`). The module skips that message and keeps running. |
