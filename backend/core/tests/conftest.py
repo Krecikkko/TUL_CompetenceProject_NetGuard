@@ -57,6 +57,15 @@ def time_window(db):
     )
 
 @pytest.fixture
+def time_window_2(db):
+    return baker.make(
+        TimeWindow,
+        start_timestamp_us=datetime.fromisoformat("2026-11-23T08:59:30Z"),
+        duration_us=timedelta(seconds=60),
+        type=TimeWindow.WindowType.GLOBAL,
+    )
+
+@pytest.fixture
 def detection(db, time_window):
     return baker.make(
         Detection,

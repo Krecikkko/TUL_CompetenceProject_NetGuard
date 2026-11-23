@@ -122,3 +122,41 @@ def test_window_stats(
     assert pytest.approx(data["bytes_per_second"], abs=0.00001) == 250.83333
     assert data["active_connections"] == 2
 
+@pytest.mark.django_db
+def test_flow_2windows(
+    api_client,
+    time_window,
+    time_window_2,
+    network_flow_tcp,
+    network_flow_icmp,
+):
+    # adding flows to window
+    time_window.network_flows.add(
+        network_flow_tcp,
+        network_flow_icmp,
+    )
+
+    time_window_2.network_flows.add(
+        network_flow_tcp,
+    )
+
+    # 1 flow belongs to 2 windows
+    response = api_client.get(f"/api/flows/{network_flow_tcp.id}/windows/")
+    
+    assert response.status_code == 200
+    
+    data = response.json()
+
+    assert data["count"] == 2
+
+    result_tcp_window = data["results"][0]
+
+    assert result_tcp_window["start_timestamp_us"] == "2026-11-23T09:00:00Z"
+    assert result_tcp_window["duration_us"] == "00:01:00"
+    assert result_tcp_window["type"] == "SO1DE1"
+
+    result_tcp_window2 = data["results"][1]
+
+    assert result_tcp_window2["start_timestamp_us"] == "2026-11-23T08:59:30Z"
+    assert result_tcp_window2["duration_us"] == "00:01:00"
+    assert result_tcp_window2["type"] == "GLOBAL"
