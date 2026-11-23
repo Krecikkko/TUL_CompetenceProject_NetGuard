@@ -4,9 +4,10 @@ from Config import *
 from TimeUtils import *
 from AlertCrafter import *
 from dataclasses import field
+from datetime import datetime
 
 class FlowProcessor:
-    
+    print ("ReceivedFlow")
     flowFlags: list[Flags] = []
     markToCheck = MarkToCheck()
     flowData = FlowData()
@@ -19,6 +20,15 @@ class FlowProcessor:
     def SetAlertCrafter(self,alertCrafter:AlertCrafterLogic):
         self.alertCrafter = alertCrafter
     def ClassifyFlow(self,flow:WebRecordData):
+        currentFlowTime = TimeUtils.parse(flow.start_time)
+        for i in range(3):
+            if (
+                self.flowData.shouldSendPatternAlerts[i]
+                and self.flowData.patternWindowEnd[i] != datetime.min
+                and TimeUtils.is_older(self.flowData.patternWindowEnd[i], currentFlowTime)
+                and hasattr(self, "alertCrafter")
+            ):
+                self.alertCrafter.simplifiedAlertList[i].cleanup()
         for i in range(0,3):
             self.flowData.flowQueues[i].append(flow) # adding to the window queues
             self.flowData.flowPatternData.AvgPacketAmount[i] += 1
@@ -26,7 +36,7 @@ class FlowProcessor:
         markToCheck = self.markToCheck
         self.UpdateDetection(flow,1,0) #processing incoming flow
         for i in range(0, 3): #process flow leaving detection window
-            windowTime = TimeUtils.parse(flow.start_time)
+            windowTime = currentFlowTime
             windowTime = TimeUtils.add(windowTime,0,flow.duration_ms)
             while(True):
                 checkedFlow:WebRecordData = self.flowData.flowQueues[i][0]
@@ -51,65 +61,93 @@ class FlowProcessor:
             flowIpProfile = self.flowData.IPRegistry[flow.src_ip] 
         else:
             flowIpProfile = self.flowData.IPRegistry[flow.dst_ip] 
+        
+
         #detection
         if(markToCheck.PortScan):
             for i in range(0,3):
                 if (flowIpProfile.AccesedPortsAmount[i] > Config.PortConnectedTresh[i]):
                     multi = flowIpProfile.AccesedPortsAmount[i]/Config.PortConnectedTresh[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Port_Scan,flowIpProfile.AccesedPortsAmount[i])
-                if(self.flowData.shouldSendPatternAlerts[i] == True):
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Port_Scan,flowIpProfile.AccesedPortsAmount[i])
+                if(self.flowData.shouldSendPatternAlerts[i] == True and self.flowData.flowPatternData.PortStats[i].n > Config.MinimumDataForStatistical):
                     score = self.flowData.flowPatternData.PortStats[i].CalcZScore(flowIpProfile.AccesedPortsAmount[i])
-                    multi = score - 3
-                    confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    if(score > 3*Config.SeverityMulti[0]):
-                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Port_Scan,flowIpProfile.AccesedPortsAmount[i])
+                    if(score > 2.5*Config.SeverityMulti[0] * pow(Config.LowDataSampleStatModifier,i)):
+                        multi = score - 2.5
+                        confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Port_Scan,flowIpProfile.AccesedPortsAmount[i])
         if(markToCheck.DoSslow):
             for i in range(0,3):
                 if (flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i] > Config.UnclosedConnectionsTresh[i]):
                     multi = (flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])/Config.UnclosedConnectionsTresh[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.DoS_Slowloris,flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])
-                if(self.flowData.shouldSendPatternAlerts[i] == True):
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.DoS_Slowloris,flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])
+                if(self.flowData.shouldSendPatternAlerts[i] == True and self.flowData.flowPatternData.DoSslow[i].n > Config.MinimumDataForStatistical):
                     score = self.flowData.flowPatternData.DoSslow[i].CalcZScore(flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])
-                    multi = score - 3
-                    confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    if(score > 3*Config.SeverityMulti[0]):
-                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.DoS_Slowloris,flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])
+                    if(score > 2.5*Config.SeverityMulti[0] * pow(Config.LowDataSampleStatModifier,i)):
+                        multi = score - 2.5
+                        confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.DoS_Slowloris,flowIpProfile.OpenConnection[i]-flowIpProfile.ClosedConnection[i])
         if(markToCheck.DoSHulk):
             for i in range(0,3):
                 if(flowIpProfile.PSHAmount[i] > Config.PSHRequestsSent[i]):
                     multi = flowIpProfile.PSHAmount[i]/Config.PSHRequestsSent[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.DoS_Hulk,flowIpProfile.PSHAmount[i])
-                if(self.flowData.shouldSendPatternAlerts[i] == True):
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.DoS_Hulk,flowIpProfile.PSHAmount[i])
+                if(self.flowData.shouldSendPatternAlerts[i] == True and self.flowData.flowPatternData.DoSHulk[i].n > Config.MinimumDataForStatistical):
                     score = self.flowData.flowPatternData.DoSHulk[i].CalcZScore(flowIpProfile.PSHAmount[i])
-                    multi = score - 3
-                    confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    if(score > 3*Config.SeverityMulti[0]):
-                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.DoS_Hulk,flowIpProfile.PSHAmount[i])
+                    if(score > 2.5*Config.SeverityMulti[0] * pow(Config.LowDataSampleStatModifier,i)):
+                        multi = score - 2.5
+                        confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.DoS_Hulk,flowIpProfile.PSHAmount[i])
         if(markToCheck.Brute):
             for i in range(0,3):
                 if(flowIpProfile.ClosedConnection[i] > Config.BruteConnectionsTresh[i]):
                     multi = flowIpProfile.ClosedConnection[i]/Config.BruteConnectionsTresh[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Brute_Force,flowIpProfile.ClosedConnection[i])
-                if(self.flowData.shouldSendPatternAlerts[i] == True):
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Brute_Force,flowIpProfile.ClosedConnection[i])
+                if(self.flowData.shouldSendPatternAlerts[i] == True and self.flowData.flowPatternData.Brute[i].n > Config.MinimumDataForStatistical):
                     score = self.flowData.flowPatternData.Brute[i].CalcZScore(flowIpProfile.ClosedConnection[i])
-                    multi = score - 3
-                    confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    if(score > 3*Config.SeverityMulti[0]):
-                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Brute_Force,flowIpProfile.ClosedConnection[i])
+                    if(score > 2.5*Config.SeverityMulti[0] * pow(Config.LowDataSampleStatModifier,i)):
+                        multi = score - 2.5
+                        confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                        AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Brute_Force,flowIpProfile.ClosedConnection[i])
         for i in range(0,3):
             if(self.flowData.shouldSendPatternAlerts[i] == True):
                 if(self.flowData.flowPatternData.AvgPacketAmount[i] > Config.AvgFlowPerS[i]):
                     multi = self.flowData.flowPatternData.AvgPacketAmount[i]/Config.AvgFlowPerS[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Abnormal_Connection_Heavy_Traffic,self.flowData.flowPatternData.AvgPacketAmount[i])
-                if(self.flowData.flowPatternData.TotalPacketSize[i] > Config.AvgPacketSize[i]):
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Abnormal_Connection_Heavy_Traffic,self.flowData.flowPatternData.AvgPacketAmount[i])
+                if(self.flowData.flowPatternData.TotalPacketSize[i] > Config.AvgPacketSize[i] and self.flowData.flowPatternData.AvgPacketAmount[i] > Config.MinimumDataForStatistical):
                     multi = self.flowData.flowPatternData.TotalPacketSize[i]/Config.AvgPacketSize[i]
                     confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
-                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,Config.TimeWindows[i],AlertTypes.Abnormal_Connection_Big_Payloads,self.flowData.flowPatternData.TotalPacketSize[i])
+                    AlertCrafterLogic.CraftAlert(self.alertCrafter,"Rule",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Abnormal_Connection_Big_Payloads,self.flowData.flowPatternData.TotalPacketSize[i])
+        #Update pattern Window
+        for i in range(0,3):
+            if(self.flowData.shouldSendPatternAlerts[i] == True):
+                if(self.flowData.patternWindowEnd[i] == datetime.min):
+                    self.flowData.patternWindowEnd[i] = TimeUtils.add(currentFlowTime,Config.TimeWindows[i])
+                elif(TimeUtils.is_older(self.flowData.patternWindowEnd[i],currentFlowTime)):
+                    self.flowData.patternWindowEnd[i] = TimeUtils.add(currentFlowTime,Config.TimeWindows[i])
+                    if(self.flowData.flowPatternData.AvgPacketAmount[i] > Config.MinimumDataForStatistical):
+                        score = self.flowData.flowPatternData.AvgPacketAmountStats[i].CalcZScore(self.flowData.flowPatternData.AvgPacketAmount[i])
+                        if(score > 2.5*Config.SeverityMulti[0]):
+                            multi = score - 2.5
+                            confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                            AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Abnormal_Connection_Heavy_Traffic,self.flowData.flowPatternData.AvgPacketAmount[i])
+                    self.flowData.flowPatternData.AvgPacketAmountStats[i].Add(self.flowData.flowPatternData.AvgPacketAmount[i])
+                    if(self.flowData.flowPatternData.AvgPacketAmount[i] > Config.MaximumDataForStatistical):
+                        self.flowData.flowPatternData.AvgPacketAmountStats[i].Low()
+                    if(self.flowData.flowPatternData.TotalPacketSize[i] > Config.MinimumDataForStatistical):
+                        score = self.flowData.flowPatternData.TotalPacketSizeStats[i].CalcZScore(self.flowData.flowPatternData.TotalPacketSize[i])
+                        if(score > 2.5*Config.SeverityMulti[0]):
+                            multi = score - 2.5
+                            confidence = self.normalize(multi,Config.SeverityMulti[0], Config.SeverityMulti[2])
+                            AlertCrafterLogic.CraftAlert(self.alertCrafter,"Statistical",self.JudgeSeverity(multi),confidence,flow,i,AlertTypes.Abnormal_Connection_Big_Payloads,self.flowData.flowPatternData.TotalPacketSize[i])
+                    self.flowData.flowPatternData.TotalPacketSizeStats[i].Add(self.flowData.flowPatternData.TotalPacketSize[i])
+                    if(self.flowData.flowPatternData.TotalPacketSize[i] > Config.MaximumDataForStatistical):
+                        self.flowData.flowPatternData.TotalPacketSizeStats[i].Low()
+
         return
 
     def UpdateDetection(self, flow:WebRecordData,incoming:int,window:int): # incoming 1 or -1, window 0-2 when incoming -1

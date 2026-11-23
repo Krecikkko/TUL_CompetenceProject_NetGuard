@@ -4,6 +4,7 @@ from typing import Optional
 import numpy as np
 from multiset import Multiset
 from StatisticsList import ZScore
+from StatisticsListBehaviour import ZScoreBehaviour
 
 @dataclass
 class FlowDetectionData:
@@ -17,6 +18,8 @@ class FlowDetectionData:
 class FlowPatternData:
     TotalPacketSize: list[int] = field(default_factory=lambda: [0,0,0])
     AvgPacketAmount: list[int] = field(default_factory=lambda: [0,0,0])
+    TotalPacketSizeStats: list[ZScoreBehaviour] = field(default_factory=lambda: [ZScoreBehaviour() for _ in range(3)])
+    AvgPacketAmountStats: list[ZScoreBehaviour] = field(default_factory=lambda: [ZScoreBehaviour() for _ in range(3)])
     PortStats: list[ZScore] = field(default_factory=lambda: [ZScore() for _ in range(3)])
     DoSslow: list[ZScore] = field(default_factory=lambda: [ZScore() for _ in range(3)])
     DoSHulk: list[ZScore] = field(default_factory=lambda: [ZScore() for _ in range(3)])
