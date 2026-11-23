@@ -4,3 +4,6 @@ psycopg[binary]==3.3.6
 gunicorn==26.2.0
 kafka-python==3.0.13
 jsonschema==4.26.0
+pytest==9.2.0
+pytest-django==4.14.0
+model-bakery==1.25.0
