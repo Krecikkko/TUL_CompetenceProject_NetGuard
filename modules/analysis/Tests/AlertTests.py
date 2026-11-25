@@ -373,11 +373,11 @@ class TestAlertGeneration(TestCase):
         for window_index, window in enumerate(Config.TimeWindows):
             self.alert_crafter.CraftAlert(
                 "Rule", "Medium", 1.0, flow, window_index,
-                AlertTypes.Port_Scan, 5,
+                AlertTypes.PORT_SCAN, 5,
             )
             self.alert_crafter.CraftAlert(
                 "Rule", "Medium", 1.0, flow, window_index,
-                AlertTypes.Port_Scan, 8,
+                AlertTypes.PORT_SCAN, 8,
             )
 
         self.assertEqual(len(self.alert_crafter.alertQueue), len(Config.TimeWindows))
@@ -397,7 +397,7 @@ class TestAlertGeneration(TestCase):
 
         for window_index in range(len(Config.TimeWindows)):
             self.alert_crafter.simplifiedAlertList[window_index].add(
-                flow.src_ip, "Rule", "Medium", AlertTypes.Port_Scan,
+                flow.src_ip, "Rule", "Medium", AlertTypes.PORT_SCAN,
             )
 
         self.flow_processor.ClassifyFlow(flow)
@@ -406,7 +406,7 @@ class TestAlertGeneration(TestCase):
         for window_index in range(len(Config.TimeWindows)):
             self.alert_crafter.CraftAlert(
                 "Rule", "Medium", 1.0, flow, window_index,
-                AlertTypes.Port_Scan, 1,
+                AlertTypes.PORT_SCAN, 1,
             )
         self.assertEqual(len(self.alert_crafter.alertQueue), 3)
 
@@ -420,7 +420,7 @@ class TestAlertGeneration(TestCase):
         for window_index in range(len(Config.TimeWindows)):
             self.alert_crafter.CraftAlert(
                 "Rule", "Medium", 1.0, next_cycle_flow, window_index,
-                AlertTypes.Port_Scan, 1,
+                AlertTypes.PORT_SCAN, 1,
             )
         self.assertEqual(len(self.alert_crafter.alertQueue), 6)
 if __name__ == '__main__':

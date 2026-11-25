@@ -6,6 +6,7 @@ from Config import *
 from time import time
 from TimeUtils import TimeUtils
 from kafkaProducer import AlertProducer
+from datetime import *
 
 class SimplifiedAlertManager:
     def __init__(self):
@@ -45,7 +46,7 @@ class AlertCrafterLogic:
         alertData.confidence = confidence
         alertData.src_ip = flow.src_ip
         alertData.dst_ip = flow.dst_ip
-        alertData.timestamp = str(time())
+        alertData.timestamp = str(datetime.now().isoformat())
         alertData.window_start = str(TimeUtils.add(TimeUtils.parse(flow.start_time),-Config.TimeWindows[windowType],0))
         alertData.duration_seconds = Config.TimeWindows[windowType]
         if(alertType == AlertTypes.PORT_SCAN):
