@@ -268,11 +268,11 @@ class FlowProcessor:
     def JudgeSeverity(self,multi:float) -> str:
         #Used once, but could be transscribed to an enum
         if(multi>Config.SeverityMulti[2]):
-            return "Severe"
+            return "CRITICAL"
         if(multi>Config.SeverityMulti[1]):
-            return "Medium"
+            return "MEDIUM"
         else:
-            return "Minor"
+            return "LOW"
     def normalize(self,x: float, a: float, b: float) -> float:
         if a == b:
             raise ValueError("Range cannot be zero")
