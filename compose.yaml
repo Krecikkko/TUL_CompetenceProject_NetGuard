@@ -121,6 +121,18 @@ services:
 
     restart: "no"
 
+  analysis:
+    build: ./modules/analysis/Scripts
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - netguard
+
   # PCAP / flow-dataset importer (modules/pcap-importer). A batch job, not a
   # long-running service: it sits behind the "importer" profile so a plain
   # `docker compose up` does not re-import (and re-publish) the same captures.

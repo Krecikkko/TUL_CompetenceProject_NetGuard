@@ -147,7 +147,7 @@ If you see `OK`, you're done.
 
 ## 5. Starting Kafka
 
-The module connects to Kafka at **`127.0.0.1:9094`** by default (override with the `KAFKA_BOOTSTRAP_SERVERS` environment variable, e.g. `kafka:9092` inside the compose network). Kafka runs in Docker and is started from the **repository root** (not from `modules/analysis`).
+When run directly on your host, the module connects to Kafka at **`127.0.0.1:9094`** by default. When run by Docker Compose, Compose sets `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, the broker address reachable from the Compose network. Kafka runs in Docker and is started from the **repository root** (not from `modules/analysis`).
 
 Open a **second terminal window** and run:
 
@@ -220,7 +220,7 @@ python main.py
 | `python3.14: command not found` / `py: command not found` | Python 3.14 isn't installed or isn't on your PATH — go back to [step 2](#2-installing-python-314). |
 | `ModuleNotFoundError: No module named 'confluent_kafka'` (or `numpy`, `multiset`) | The venv isn't active or the dependencies weren't installed. Activate the venv and repeat [step 4](#4-installing-dependencies). |
 | `ModuleNotFoundError: No module named 'kafkaReciever'` (or another module file) | You're running `main.py` from a different folder. Go to `modules/analysis` and run `python main.py`. |
-| `Connect to ipv4#127.0.0.1:9094 failed: Connection refused` | Kafka isn't running. Start it ([step 5](#5-starting-kafka)) and check `docker compose ps -a`. |
+| `Connect to ipv4#127.0.0.1:9094 failed: Connection refused` | For a module running in Docker, use `kafka:9092` (set automatically by Compose). For a host-run module, start Kafka ([step 5](#5-starting-kafka)) and use `127.0.0.1:9094`. |
 | `Connect to ipv6#[::1]:9094 failed` | The external listener is IPv4-only. Use `127.0.0.1:9094` for a host process; containers should use `kafka:9092`. |
 | `Subscribed topic not available: flows.normalized` | The topics weren't created. Run `docker compose up -d kafka-init` again. |
 | `pip install confluent-kafka` fails (build errors, missing `librdkafka`) | Upgrade pip (`python -m pip install --upgrade pip`) and try again. If that doesn't help, make sure you're using Python 3.14 from the venv (`python --version`). |

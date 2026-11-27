@@ -10,6 +10,8 @@ from StatisticsListBehaviour import ZScoreBehaviour
 class FlowDetectionData:
     PortList: list[Multiset] = field(default_factory=lambda: [Multiset() for _ in range(3)])
     AccesedPortsAmount: list[int] = field(default_factory=lambda: [0,0,0])
+    SynPackets: list[int] = field(default_factory=lambda: [0,0,0])
+    AckPackets: list[int] = field(default_factory=lambda: [0,0,0])
     OpenConnection: list[int] = field(default_factory=lambda: [0,0,0])
     ClosedConnection: list[int] = field(default_factory=lambda: [0,0,0])
     PSHAmount: list[int] = field(default_factory=lambda: [0,0,0])

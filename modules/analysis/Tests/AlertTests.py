@@ -154,18 +154,44 @@ class TestAlertGeneration(TestCase):
         self.flow_processor.ClassifyFlow(flow)
 
         self._assert_rule_alerts(
-            flow, "Port_Scan", "Port_Scan", "Ports Scanned", 2,
+            flow, "PORT_SCAN", "PORT_SCAN", "Ports Scanned", 2,
         )
 
     def test_rule_slowloris_each_window(self):
         Config.UnclosedConnectionsTresh = [1] * 3
         flow = self._flow(tcp_flags=2)
+        ack_flow = self._flow(tcp_flags=16)
 
-        self.flow_processor.ClassifyFlow(flow)
-        self.flow_processor.ClassifyFlow(flow)
+        for _ in range(2):
+            self.flow_processor.ClassifyFlow(ack_flow)
+            self.flow_processor.ClassifyFlow(flow)
+
+        profile = self.flow_processor.flowData.IPRegistry[self.client_ip]
+        self.assertEqual(profile.SynPackets, [2] * 3)
+        self.assertEqual(profile.AckPackets, [2] * 3)
+        self.assertEqual(profile.OpenConnection, [2] * 3)
 
         self._assert_rule_alerts(
-            flow, "DoS_Slowloris", "DoS", "Maintained open connections", 2,
+            flow, "DoS_Slowloris", "DOS_LIKE", "Maintained open connections", 2,
+        )
+
+    def test_slowloris_window_expiry_removes_zero_count_from_statistics(self):
+        self.flow_processor.ClassifyFlow(self._flow(tcp_flags=16))
+        self.flow_processor.ClassifyFlow(self._flow(tcp_flags=2))
+
+        later_flow = self._flow(protocol="UDP", tcp_flags=None)
+        later_flow.start_time = TimeUtils.add(
+            TimeUtils.parse(later_flow.start_time), seconds=2,
+        ).isoformat()
+        self.flow_processor.ClassifyFlow(later_flow)
+
+        profile = self.flow_processor.flowData.IPRegistry[self.client_ip]
+        self.assertEqual(profile.SynPackets, [0, 1, 1])
+        self.assertEqual(profile.AckPackets, [0, 1, 1])
+        self.assertEqual(profile.OpenConnection, [0, 1, 1])
+        self.assertEqual(
+            [stats.n for stats in self.flow_processor.flowData.flowPatternData.DoSslow],
+            [0, 1, 1],
         )
 
     def test_rule_hulk_each_window(self):
@@ -175,7 +201,7 @@ class TestAlertGeneration(TestCase):
         self.flow_processor.ClassifyFlow(flow)
         self.flow_processor.ClassifyFlow(flow)
         self._assert_rule_alerts(
-            flow, "DoS_Hulk", "DoS", "PSH requests amount", 2,
+            flow, "DoS_Hulk", "DOS_LIKE", "PSH requests amount", 2,
         )
 
     def test_rule_brute_force_each_window(self):
@@ -188,7 +214,7 @@ class TestAlertGeneration(TestCase):
         self.flow_processor.ClassifyFlow(flow)
 
         self._assert_rule_alerts(
-            flow, "Brute_Force", "Brute_Force", "Failed connections amount", 2,
+            flow, "BRUTE_FORCE_LIKE", "BRUTE_FORCE_LIKE", "Failed connections amount", 2,
         )
 
     def test_rule_heavy_traffic_each_window(self):
@@ -200,7 +226,7 @@ class TestAlertGeneration(TestCase):
         self.flow_processor.ClassifyFlow(flow)
 
         self._assert_rule_alerts(
-            flow, "Abnormal_Connection_Heavy_Traffic", "Abnormal_Connection",
+            flow, "Abnormal_Connection_Heavy_Traffic", "ABNORMAL_CONNECTION_PATTERN",
             "Average traffic amount", 2,
         )
 
@@ -213,7 +239,7 @@ class TestAlertGeneration(TestCase):
             self.flow_processor.ClassifyFlow(flow)
 
         self._assert_rule_alerts(
-            flow, "Abnormal_Connection_Big_Payloads", "Abnormal_Connection",
+            flow, "Abnormal_Connection_Big_Payloads", "ABNORMAL_CONNECTION_PATTERN",
             "Average payload size", 100 * (Config.MinimumDataForStatistical + 1),
         )
 
@@ -239,7 +265,7 @@ class TestAlertGeneration(TestCase):
                 self.flow_processor.ClassifyFlow(flow)
 
                 self._assert_statistical_alert(
-                    flow, window, "Port_Scan", "Port_Scan", "Ports Scanned", 20,
+                    flow, window, "PORT_SCAN", "PORT_SCAN", "Ports Scanned", 20,
                     [1] * 20 + [10], window_index,
                 )
 
@@ -251,6 +277,8 @@ class TestAlertGeneration(TestCase):
                 self._new_harness()
                 profile = FlowDetectionData()
                 for index in range(3):
+                    profile.SynPackets[index] = 5
+                    profile.AckPackets[index] = 5
                     profile.OpenConnection[index] = 5
                     self._seed_zscore(
                         self.flow_processor.flowData.flowPatternData.DoSslow[index],
@@ -262,12 +290,13 @@ class TestAlertGeneration(TestCase):
                     )
                 self.flow_processor.flowData.IPRegistry[self.client_ip] = profile
                 self.flow_processor.flowData.shouldSendPatternAlerts[window_index] = True
-                flow = self._flow(tcp_flags=2)
+                flow = self._flow(tcp_flags=18)
 
                 self.flow_processor.ClassifyFlow(flow)
 
                 self._assert_statistical_alert(
-                    flow, window, "DoS_Slowloris", "DoS", "Maintained open connections", 6,
+                    flow, window, "DoS_Slowloris", "DOS_LIKE",
+                    "Maintained open connections", 6,
                     [1] * 20 + [6], window_index,
                 )
 
@@ -291,7 +320,7 @@ class TestAlertGeneration(TestCase):
                 self.flow_processor.ClassifyFlow(flow)
 
                 self._assert_statistical_alert(
-                    flow, window, "DoS_Hulk", "DoS", "PSH requests amount", 11,
+                    flow, window, "DoS_Hulk", "DOS_LIKE", "PSH requests amount", 11,
                     [1] * 20 + [11], window_index,
                 )
 
@@ -315,7 +344,7 @@ class TestAlertGeneration(TestCase):
                 self.flow_processor.ClassifyFlow(flow)
 
                 self._assert_statistical_alert(
-                    flow, window, "Brute_Force", "Brute_Force",
+                    flow, window, "BRUTE_FORCE_LIKE", "BRUTE_FORCE_LIKE",
                     "Failed connections amount", 11, [1] * 20 + [11], window_index,
                 )
 
@@ -339,7 +368,7 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "Abnormal_Connection_Heavy_Traffic",
-                    "Abnormal_Connection", "Average traffic amount",
+                    "ABNORMAL_CONNECTION_PATTERN", "Average traffic amount",
                     Config.MinimumDataForStatistical + 2, [1] * 20 + [2],
                     window_index,
                 )
@@ -364,7 +393,7 @@ class TestAlertGeneration(TestCase):
 
                 self._assert_statistical_alert(
                     flow, window, "Abnormal_Connection_Big_Payloads",
-                    "Abnormal_Connection", "Average payload size", 1200,
+                    "ABNORMAL_CONNECTION_PATTERN", "Average payload size", 1200,
                     [100] * 20 + [200], window_index,
                 )
 

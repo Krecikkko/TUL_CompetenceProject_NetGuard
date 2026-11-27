@@ -11,6 +11,7 @@ class ZScore:
 
     def Add(self, x: int) -> None:
         #Modifies an existing item x -> x + 1
+        x = x-1
         count = self.counts.get(x, 0)
         if(x == 0):
             self.counts[1] = self.counts.get(1, 0) + 1
@@ -33,6 +34,7 @@ class ZScore:
 
     def Low(self, x: int) -> None:
         #Modifies an existing item x -> x - 1; drops it if it hits 0.
+        x = x+1
         count = self.counts.get(x, 0)
         if count == 0:
             raise KeyError(f"Value {x} not in multiset")

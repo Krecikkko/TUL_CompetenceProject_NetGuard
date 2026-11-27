@@ -170,28 +170,41 @@ class FlowProcessor:
                 self.flowData.IPRegistry[flow.src_ip] = flowDetectionData
             else:
                 flowDetectionData = self.flowData.IPRegistry[flow.src_ip]
-            if(flow.protocol == "TCP"):
-                if Flags.SYN in self.flowFlags or Flags.FIN in self.flowFlags or len(self.flowFlags) == 0:
-                    self.ModifyAccesedPorts(flow,flowDetectionData,window,incoming)
             if(flow.protocol == "UDP"):
                     self.ModifyAccesedPorts(flow,flowDetectionData,window,incoming)
             if(flow.protocol == "TCP"):
-                    if Flags.SYN in self.flowFlags: #check if connection was open
+                    if Flags.SYN in self.flowFlags or Flags.FIN in self.flowFlags or len(self.flowFlags) == 0:
+                        self.ModifyAccesedPorts(flow,flowDetectionData,window,incoming)
+                    if Flags.ACK in self.flowFlags:
                         for i in range(b,e):
-                            connnectionsAmount = flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i]
-                            if(incoming == 1 and connnectionsAmount >= 0):
-                                self.flowData.flowPatternData.DoSslow[i].Add(connnectionsAmount)
-                            elif(connnectionsAmount > 0):
-                                self.flowData.flowPatternData.DoSslow[i].Low(connnectionsAmount)        
-                            flowDetectionData.OpenConnection[i] += incoming                    
-                        self.markToCheck.DoSslow = True
+                            flowDetectionData.AckPackets[i] += incoming;
+                            if(min(flowDetectionData.AckPackets[i],flowDetectionData.SynPackets[i]) != flowDetectionData.OpenConnection[i]):
+                                flowDetectionData.OpenConnection[i] = min(flowDetectionData.AckPackets[i],flowDetectionData.SynPackets[i])
+                                connnectionsAmount = flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i]
+                                if(incoming == 1 and connnectionsAmount > 0):
+                                    self.flowData.flowPatternData.DoSslow[i].Add(connnectionsAmount)
+                                elif(incoming == -1 and connnectionsAmount >= 0):
+                                    self.flowData.flowPatternData.DoSslow[i].Low(connnectionsAmount)
+                                self.markToCheck.DoSslow = True
+                    if Flags.SYN in self.flowFlags:
+                        for i in range(b,e):
+                            flowDetectionData.SynPackets[i] += incoming
+                            if(min(flowDetectionData.AckPackets[i],flowDetectionData.SynPackets[i]) != flowDetectionData.OpenConnection[i]):
+                                flowDetectionData.OpenConnection[i] = min(flowDetectionData.AckPackets[i],flowDetectionData.SynPackets[i])
+                                connnectionsAmount = flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i]
+                                if(incoming == 1 and connnectionsAmount > 0):
+                                    self.flowData.flowPatternData.DoSslow[i].Add(connnectionsAmount)
+                                elif(incoming == -1 and connnectionsAmount >= 0):
+                                    self.flowData.flowPatternData.DoSslow[i].Low(connnectionsAmount)
+                                self.markToCheck.DoSslow = True
+
                     if Flags.PSH in self.flowFlags:
                         for i in range(b,e):
                             flowDetectionData.PSHAmount[i] += incoming
                             if(incoming == 1):
-                                self.flowData.flowPatternData.DoSHulk[i].Add(flowDetectionData.PSHAmount[i] - 1)
+                                self.flowData.flowPatternData.DoSHulk[i].Add(flowDetectionData.PSHAmount[i])
                             else:
-                                self.flowData.flowPatternData.DoSHulk[i].Low(flowDetectionData.PSHAmount[i] + 1)
+                                self.flowData.flowPatternData.DoSHulk[i].Low(flowDetectionData.PSHAmount[i])
                         self.markToCheck.DoSHulk = True
         else:  #packet is from service
             if( flow.dst_ip in self.flowData.IPRegistry.keys() ) == False:
@@ -205,12 +218,12 @@ class FlowProcessor:
                         flowDetectionData.ClosedConnection[i] += incoming
                         if(incoming == 1):
                             if(flowDetectionData.ClosedConnection[i] <= flowDetectionData.OpenConnection[i]):
-                                self.flowData.flowPatternData.DoSslow[i].Low(flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i] + 1)
-                            self.flowData.flowPatternData.Brute[i].Add(flowDetectionData.ClosedConnection[i] - 1)
+                                self.flowData.flowPatternData.DoSslow[i].Low(flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i])
+                            self.flowData.flowPatternData.Brute[i].Add(flowDetectionData.ClosedConnection[i])
                         else:
                             if(flowDetectionData.ClosedConnection[i] < flowDetectionData.OpenConnection[i]):
-                                self.flowData.flowPatternData.DoSslow[i].Add(flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i] - 1)
-                            self.flowData.flowPatternData.Brute[i].Low(flowDetectionData.ClosedConnection[i] + 1)
+                                self.flowData.flowPatternData.DoSslow[i].Add(flowDetectionData.OpenConnection[i] - flowDetectionData.ClosedConnection[i])
+                            self.flowData.flowPatternData.Brute[i].Low(flowDetectionData.ClosedConnection[i])
                     self.markToCheck.Brute = True
         return
 
@@ -232,16 +245,17 @@ class FlowProcessor:
                     ports.add(flow.dst_port)
                     portCount = len(set(ports))
                     if(portCount > flowDetectionData.AccesedPortsAmount[i]):
-                        self.flowData.flowPatternData.PortStats[i].Add(flowDetectionData.AccesedPortsAmount[i])
                         flowDetectionData.AccesedPortsAmount[i] = portCount
+                        self.flowData.flowPatternData.PortStats[i].Add(flowDetectionData.AccesedPortsAmount[i])
+
         else:
             ports = flowDetectionData.PortList[table]
             ports.remove(flow.dst_port,1)
             portCount = len(set(ports))
             if(portCount < flowDetectionData.AccesedPortsAmount[table]):
-                self.flowData.flowPatternData.PortStats[table].Low(flowDetectionData.AccesedPortsAmount[table])
                 flowDetectionData.AccesedPortsAmount[table] = portCount
-        
+                self.flowData.flowPatternData.PortStats[table].Low(flowDetectionData.AccesedPortsAmount[table])
+
     def CheckToClearRecord(self,ipAdress:str):
         detectionData:FlowDetectionData = self.flowData.IPRegistry[ipAdress]
         #if every data entry is empty, we can get rid of the record
